@@ -1,11 +1,37 @@
 <template>
   <main class="shell">
+    <div
+      v-if="showReward"
+      class="reward-overlay"
+      :class="{ hiding: rewardHiding }"
+      @click="dismissReward"
+    >
+      <div class="reward-rays" aria-hidden="true"></div>
+      <div class="reward-confetti" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+      <div class="reward-card">
+        <div class="reward-medal" aria-hidden="true">✓</div>
+        <p class="reward-kicker">Good Work</p>
+        <strong>{{ resultMessage }}</strong>
+      </div>
+    </div>
+
     <section class="topbar">
       <div>
         <p class="eyebrow">English Practice</p>
         <h1>英语文章练习系统</h1>
       </div>
-      <div class="status-pill">逐词输入</div>
+      <div class="status-pill">自由输入</div>
     </section>
 
     <section class="workspace">
@@ -50,26 +76,26 @@
                 <h3>中文</h3>
                 <p>{{ currentArticle.chinese_text }}</p>
               </article>
-              <article :class="{ locked: !allCorrect }">
+              <article :class="{ locked: !result }">
                 <h3>英文</h3>
-                <p v-if="allCorrect">{{ currentArticle.english_text }}</p>
-                <p v-else class="locked-copy">全部输入完成且完全正确后显示完整英文</p>
+                <p v-if="result">{{ currentArticle.english_text }}</p>
+                <p v-else class="locked-copy">提交后显示完整英文</p>
               </article>
             </div>
           </div>
 
           <div class="practice-box">
             <div class="progress-row">
-              <span>进度 {{ currentIndex + 1 }} / {{ tokens.length }}</span>
-              <progress :value="progressValue" :max="tokens.length"></progress>
+              <span>{{ result ? '已提交' : hasStarted ? '输入中' : '未开始' }}</span>
+              <progress :value="progressValue" max="1"></progress>
               <button
                 v-if="!result"
                 class="start-button"
                 type="button"
-                :disabled="hasStarted"
-                @click="startPractice"
+                :disabled="!sessionId || (hasStarted && (!currentInput.trim() || submitting))"
+                @click="hasStarted ? submitPractice() : startPractice()"
               >
-                {{ hasStarted ? '练习中' : '开始' }}
+                {{ hasStarted ? (submitting ? '提交中' : '提交') : '开始' }}
               </button>
               <button v-else class="start-button" type="button" @click="restartPractice">
                 重新开始
@@ -78,72 +104,30 @@
 
             <template v-if="!result">
               <div class="word-card">
-                <div class="word-marker">当前单词 #{{ currentToken?.token_order }}</div>
+                <div class="word-marker">输入你记得的英文单词，不要求顺序</div>
                 <div class="typing-row">
-                  <input
-                    ref="answerInput"
-                    v-model="sentenceInput"
-                    autocomplete="off"
-                    placeholder="连续输入，例如 good morning lily"
-                    :disabled="!sessionId || !hasStarted"
-                    @input="handleTyping"
-                    @keydown.space.prevent="handleSpace"
-                  />
+                  <div
+                    class="rich-input"
+                    :class="{ disabled: !sessionId || !hasStarted }"
+                    @click="focusAnswerInput"
+                  >
+                    <textarea
+                      ref="answerInput"
+                      v-model="currentInput"
+                      class="free-answer-input"
+                      autocomplete="off"
+                      placeholder="例如：teacher windows"
+                      :disabled="!sessionId || !hasStarted"
+                      @input="handleTyping"
+                      @keydown.enter.exact.prevent="submitPractice"
+                    ></textarea>
+                  </div>
                 </div>
-              </div>
-
-              <div class="hint" :class="{ visible: showHint }">
-                <div>
-                  <span class="hint-label">单词</span>
-                  <strong>{{ currentToken?.target_word }}</strong>
-                </div>
-                <div>
-                  <span class="hint-label">词性</span>
-                  <strong>{{ currentToken?.part_of_speech }}</strong>
-                </div>
-                <div>
-                  <span class="hint-label">翻译</span>
-                  <strong>{{ currentToken?.translation }}</strong>
-                </div>
-                <a :href="currentToken?.grammar_link" target="_blank" rel="noreferrer">查看语法</a>
               </div>
             </template>
 
             <div v-else class="result-panel">
-              <div class="score-grid">
-                <div>
-                  <span>完全正确</span>
-                  <strong>{{ result.correctCount }}</strong>
-                </div>
-                <div>
-                  <span>意思正确但不适用</span>
-                  <strong>{{ result.meaningCorrectButNotApplicableCount }}</strong>
-                </div>
-                <div>
-                  <span>错误</span>
-                  <strong>{{ result.incorrectCount }}</strong>
-                </div>
-              </div>
-              <table>
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>目标词</th>
-                    <th>输入</th>
-                    <th>结果</th>
-                    <th>说明</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="item in result.answers" :key="item.articleTokenId">
-                    <td>{{ item.tokenOrder }}</td>
-                    <td>{{ item.targetWord }}</td>
-                    <td>{{ item.userInput }}</td>
-                    <td>{{ resultText(item.resultStatus) }}</td>
-                    <td>{{ item.aiReason || item.translation }}</td>
-                  </tr>
-                </tbody>
-              </table>
+              <div class="result-message">{{ resultMessage }}</div>
             </div>
           </div>
         </template>
@@ -155,27 +139,25 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 
 const articles = ref([]);
 const selectedLevel = ref('');
 const currentArticle = ref(null);
 const sessionId = ref(null);
-const currentIndex = ref(0);
-const sentenceInput = ref('');
+const currentInput = ref('');
 const hasStarted = ref(false);
-const showHint = ref(false);
 const loading = ref(false);
 const submitting = ref(false);
 const errorMessage = ref('');
 const result = ref(null);
 const answerInput = ref(null);
-let hintTimer = null;
+const showReward = ref(false);
+const rewardHiding = ref(false);
+let rewardTimer = null;
 
 const tokens = computed(() => currentArticle.value?.tokens || []);
-const currentToken = computed(() => tokens.value[currentIndex.value]);
-const progressValue = computed(() => (result.value ? tokens.value.length : currentIndex.value));
-const currentWord = computed(() => sentenceInput.value.split(' ').at(-1) || '');
+const progressValue = computed(() => (result.value ? 1 : 0));
 const allCorrect = computed(
   () =>
     Boolean(result.value) &&
@@ -183,6 +165,16 @@ const allCorrect = computed(
     result.value.meaningCorrectButNotApplicableCount === 0 &&
     result.value.incorrectCount === 0
 );
+const resultMessage = computed(() => {
+  if (!result.value) return '';
+  if (result.value.correctCount === 0) {
+    return '本次没有输入正确的单词，请再接再励';
+  }
+  if (allCorrect.value) {
+    return '恭喜，正确输入了所有单词';
+  }
+  return `恭喜，正确输入了${formatChineseCount(result.value.correctCount)}个单词`;
+});
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -235,102 +227,129 @@ async function resetPracticeSession(articleId) {
     body: JSON.stringify({ articleId })
   });
   sessionId.value = session.sessionId;
-  currentIndex.value = 0;
-  sentenceInput.value = '';
+  currentInput.value = '';
   hasStarted.value = false;
   result.value = null;
-  clearHintTimer();
 }
 
 async function startPractice() {
   if (!sessionId.value || hasStarted.value || result.value) return;
   hasStarted.value = true;
-  resetHintTimer();
   await nextTick();
   answerInput.value?.focus();
 }
 
-async function submitCurrentWord() {
+async function submitPractice() {
   if (submitting.value) return;
-  const currentAnswer = currentWord.value.trim();
-  if (!currentToken.value || !currentAnswer) return;
+  const currentAnswer = currentInput.value.trim();
+  if (!sessionId.value || !currentAnswer) return;
   submitting.value = true;
   errorMessage.value = '';
   try {
-    await api(`/api/practice-sessions/${sessionId.value}/answers`, {
+    const summary = buildLocalSummary(currentAnswer);
+    await api(`/api/practice-sessions/${sessionId.value}/finish`, {
       method: 'POST',
-      body: JSON.stringify({
-        articleTokenId: currentToken.value.id,
-        userInput: currentAnswer
-      })
+      body: JSON.stringify(summary)
     });
-    if (currentIndex.value + 1 >= tokens.value.length) {
-      await finishPractice();
-    } else {
-      currentIndex.value += 1;
-      sentenceInput.value = `${sentenceInput.value.trim()} `;
-      if (hasStarted.value) {
-        resetHintTimer();
-      }
-      await nextTick();
-      answerInput.value?.focus();
+    result.value = summary;
+    hasStarted.value = false;
+    if (summary.correctCount > 0) {
+      openReward();
     }
   } catch (error) {
     errorMessage.value = error.message;
   } finally {
     submitting.value = false;
-    await nextTick();
-    answerInput.value?.focus();
+    if (!result.value) {
+      await nextTick();
+      answerInput.value?.focus();
+    }
   }
 }
 
-function handleTyping(event) {
+function openReward() {
+  clearRewardTimer();
+  rewardHiding.value = false;
+  showReward.value = true;
+}
+
+function dismissReward() {
+  if (!showReward.value || rewardHiding.value) return;
+  rewardHiding.value = true;
+  rewardTimer = setTimeout(() => {
+    showReward.value = false;
+    rewardHiding.value = false;
+    rewardTimer = null;
+  }, 500);
+}
+
+function handleGlobalKeydown() {
+  dismissReward();
+}
+
+function clearRewardTimer() {
+  if (!rewardTimer) return;
+  clearTimeout(rewardTimer);
+  rewardTimer = null;
+}
+
+function handleTyping() {
   if (!hasStarted.value) return;
-  const normalizedValue = event.target.value.replace(/\s+/g, ' ');
-  if (event.target.value !== normalizedValue) {
-    sentenceInput.value = normalizedValue;
-    event.target.value = normalizedValue;
-  }
-  syncCurrentIndexFromInput();
-
-  resetHintTimer();
-
-  if (isLastWordComplete()) {
-    submitCurrentWord();
-  }
+  errorMessage.value = '';
 }
 
-function syncCurrentIndexFromInput() {
-  const confirmedCount = sentenceInput.value.endsWith(' ')
-    ? sentenceInput.value.trim().split(' ').filter(Boolean).length
-    : Math.max(sentenceInput.value.trim().split(' ').filter(Boolean).length - 1, 0);
-  currentIndex.value = Math.min(confirmedCount, Math.max(tokens.value.length - 1, 0));
+async function focusAnswerInput() {
+  if (!hasStarted.value || result.value) return;
+  await nextTick();
+  answerInput.value?.focus();
 }
 
-async function handleSpace() {
-  if (!hasStarted.value) return;
-  await submitCurrentWord();
-}
-
-async function finishPractice() {
-  clearHintTimer();
-  result.value = await api(`/api/practice-sessions/${sessionId.value}/finish`, {
-    method: 'POST',
-    body: JSON.stringify({})
+function buildLocalSummary(answerText) {
+  const remainingTargetCounts = buildTargetCounts();
+  const inputWords = splitInputWords(answerText);
+  const answers = inputWords.map((word) => {
+    const normalizedWord = normalizeWord(word);
+    const remainingCount = remainingTargetCounts.get(normalizedWord) || 0;
+    const isCorrect = remainingCount > 0;
+    if (isCorrect) {
+      remainingTargetCounts.set(normalizedWord, remainingCount - 1);
+    }
+    return {
+      articleTokenId: null,
+      tokenOrder: null,
+      targetWord: '',
+      userInput: word,
+      resultStatus: isCorrect ? 'correct' : 'incorrect',
+      aiReason: '',
+      phonetic: '',
+      translation: ''
+    };
   });
+  const correctCount = answers.filter((item) => item.resultStatus === 'correct').length;
+  const incorrectCount = answers.length - correctCount;
+  return {
+    correctCount,
+    meaningCorrectButNotApplicableCount: 0,
+    incorrectCount,
+    answers
+  };
 }
 
-function clearHintTimer() {
-  clearTimeout(hintTimer);
-  showHint.value = false;
+function buildTargetCounts() {
+  const counts = new Map();
+  tokens.value.forEach((token) => {
+    const word = normalizeWord(token.target_word);
+    if (!word) return;
+    counts.set(word, (counts.get(word) || 0) + 1);
+  });
+  return counts;
 }
 
-function resetHintTimer() {
-  clearHintTimer();
-  showHint.value = false;
-  hintTimer = setTimeout(() => {
-    showHint.value = true;
-  }, 3000);
+function splitInputWords(value) {
+  return String(value || '')
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter((word) => normalizeWord(word));
 }
 
 function levelName(level) {
@@ -342,27 +361,37 @@ function levelName(level) {
   }[level];
 }
 
-function resultText(status) {
-  return {
-    correct: '完全正确',
-    meaning_correct_but_not_applicable: '意思正确但不适用',
-    incorrect: '错误',
-    pending_review: '待判定'
-  }[status] || status;
+function normalizeWord(value) {
+  return String(value || '')
+    .trim()
+    .replace(/[.,!?;:"'()[\]{}]/g, '')
+    .toLowerCase();
 }
 
-function isLastWordComplete() {
-  if (!currentToken.value || currentIndex.value + 1 !== tokens.value.length) {
-    return false;
+function formatChineseCount(count) {
+  const digits = ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九'];
+  if (count === 2) return '两';
+  if (count >= 0 && count < 10) return digits[count];
+  if (count === 10) return '十';
+  if (count > 10 && count < 20) return `十${digits[count % 10]}`;
+  if (count >= 20 && count < 100 && count % 10 === 0) return `${digits[Math.floor(count / 10)]}十`;
+  if (count >= 20 && count < 100) {
+    return `${digits[Math.floor(count / 10)]}十${digits[count % 10]}`;
   }
-  return currentWord.value.trim().toLowerCase() === currentToken.value.target_word.trim().toLowerCase();
+  return String(count);
 }
 
 onMounted(async () => {
+  window.addEventListener('keydown', handleGlobalKeydown);
   try {
     await loadArticles();
   } catch (error) {
     errorMessage.value = error.message;
   }
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleGlobalKeydown);
+  clearRewardTimer();
 });
 </script>

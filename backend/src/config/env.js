@@ -27,11 +27,7 @@ export const env = {
     port: numberEnv('MYSQL_PORT', 3306),
     user: process.env.MYSQL_USER || 'root',
     password: process.env.MYSQL_PASSWORD || '',
-    database: process.env.MYSQL_DATABASE || 'english_practice',
+    database: process.env.MYSQL_DATABASE || 'study',
     charset: process.env.MYSQL_CHARSET || 'utf8mb4'
-  },
-  openai: {
-    apiKey: process.env.OPENAI_API_KEY || '',
-    model: process.env.OPENAI_MODEL || 'gpt-5.4-mini'
   }
 };

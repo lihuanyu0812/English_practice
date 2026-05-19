@@ -6,7 +6,7 @@ services:
     environment:
       TZ: Asia/Shanghai
       MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-your_mysql_password}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-english_practice}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-study}
     command:
       - --character-set-server=${MYSQL_CHARSET:-utf8mb4}
       - --collation-server=utf8mb4_0900_ai_ci
@@ -36,10 +36,8 @@ services:
       MYSQL_PORT: 3306
       MYSQL_USER: ${MYSQL_USER:-root}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-your_mysql_password}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-english_practice}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-study}
       MYSQL_CHARSET: ${MYSQL_CHARSET:-utf8mb4}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.4-mini}
     ports:
       - "${BACKEND_PORT:-8016}:${BACKEND_PORT:-8016}"
     volumes:

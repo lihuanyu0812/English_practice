@@ -20,7 +20,7 @@ export async function createPracticeAnswer(req, res, next) {
 
 export async function finishPracticeSession(req, res, next) {
   try {
-    const data = await finishSession(req.params.id);
+    const data = await finishSession(req.params.id, req.body);
     res.json({ code: 0, msg: '请求成功', data });
   } catch (error) {
     next(error);
