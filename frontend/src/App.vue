@@ -80,6 +80,10 @@
                 <h3>英文</h3>
                 <p v-if="result">{{ currentArticle.english_text }}</p>
                 <p v-else class="locked-copy">提交后显示完整英文</p>
+                <div v-if="result && submittedInput" class="submitted-answer">
+                  <h3>我的输入</h3>
+                  <p>{{ submittedInput }}</p>
+                </div>
               </article>
             </div>
           </div>
@@ -146,6 +150,7 @@ const selectedLevel = ref('');
 const currentArticle = ref(null);
 const sessionId = ref(null);
 const currentInput = ref('');
+const submittedInput = ref('');
 const hasStarted = ref(false);
 const loading = ref(false);
 const submitting = ref(false);
@@ -198,6 +203,7 @@ async function selectArticle(articleId) {
   loading.value = true;
   errorMessage.value = '';
   result.value = null;
+  submittedInput.value = '';
   try {
     currentArticle.value = await api(`/api/articles/${articleId}`);
     await resetPracticeSession(articleId);
@@ -228,6 +234,7 @@ async function resetPracticeSession(articleId) {
   });
   sessionId.value = session.sessionId;
   currentInput.value = '';
+  submittedInput.value = '';
   hasStarted.value = false;
   result.value = null;
 }
@@ -252,6 +259,7 @@ async function submitPractice() {
       body: JSON.stringify(summary)
     });
     result.value = summary;
+    submittedInput.value = currentAnswer;
     hasStarted.value = false;
     if (summary.correctCount > 0) {
       openReward();

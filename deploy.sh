@@ -59,15 +59,36 @@ compose_exec() {
 }
 
 build_images() {
+  compose_exec build backend frontend
+  echo "前后端镜像已按缓存构建"
+}
+
+rebuild_images() {
   compose_exec build --pull --no-cache backend frontend
   echo "前后端镜像已全量重建（--pull --no-cache）"
 }
 
+ensure_log_dir() {
+  mkdir -p "${PROJECT_DIR}/logs"
+}
+
 start_services() {
-  local app_public_url="${APP_PUBLIC_URL:-http://localhost:9016}"
-  local backend_public_url="${BACKEND_PUBLIC_URL:-http://localhost:${BACKEND_PORT:-8016}}"
+  local app_public_url="${APP_PUBLIC_URL:?错误: 请在 .env 中配置 APP_PUBLIC_URL}"
+  local backend_public_url="${BACKEND_PUBLIC_URL:?错误: 请在 .env 中配置 BACKEND_PUBLIC_URL}"
   check_docker_ready
-  build_images
+  ensure_log_dir
+  compose_exec up -d --build --remove-orphans
+  echo "启动成功"
+  echo "前端地址: ${app_public_url}"
+  echo "后端地址: ${backend_public_url}"
+}
+
+rebuild_services() {
+  local app_public_url="${APP_PUBLIC_URL:?错误: 请在 .env 中配置 APP_PUBLIC_URL}"
+  local backend_public_url="${BACKEND_PUBLIC_URL:?错误: 请在 .env 中配置 BACKEND_PUBLIC_URL}"
+  check_docker_ready
+  ensure_log_dir
+  rebuild_images
   compose_exec up -d --no-build --force-recreate --remove-orphans
   echo "启动成功"
   echo "前端地址: ${app_public_url}"
@@ -94,8 +115,17 @@ case "${ACTION}" in
     load_env
     start_services
     ;;
+  build)
+    load_env
+    check_docker_ready
+    build_images
+    ;;
+  rebuild)
+    load_env
+    rebuild_services
+    ;;
   *)
-    echo "用法: ./deploy.sh [start|stop|restart]"
+    echo "用法: ./deploy.sh [start|stop|restart|build|rebuild]"
     exit 1
     ;;
 esac

@@ -36,27 +36,34 @@ export async function getTokensForArticle(article) {
   const words = splitEnglishWords(article.english_text);
   if (!words.length) return [];
 
-  const uniqueWords = [...new Set(words.map((word) => word.toLowerCase()))];
+  const uniqueWords = [...new Set(words.map((word) => normalizeDictionaryKey(word)))];
   const params = Object.fromEntries(uniqueWords.map((word, index) => [`word${index}`, word]));
   const placeholders = uniqueWords.map((_, index) => `:word${index}`).join(', ');
   const [dictionaryRows] = await pool.execute(
     `SELECT
        word AS dictionary_word,
-       LOWER(word) AS lookup_word,
+       LOWER(word) AS normalized_word,
+       sw AS lookup_word,
        phonetic,
        pos,
        translation AS dictionary_translation
      FROM study.stardict
-     WHERE LOWER(word) IN (${placeholders})`,
+     WHERE sw IN (${placeholders})`,
     params
   );
-  const dictionaryByWord = new Map(dictionaryRows.map((row) => [row.lookup_word, row]));
+  const dictionaryByWord = new Map();
+  for (const row of dictionaryRows) {
+    const existingRow = dictionaryByWord.get(row.lookup_word);
+    if (!existingRow || row.normalized_word === row.lookup_word) {
+      dictionaryByWord.set(row.lookup_word, row);
+    }
+  }
   const rows = words.map((word, index) => ({
     id: index + 1,
     article_id: article.id,
     token_order: index + 1,
     target_word: word,
-    ...dictionaryByWord.get(word.toLowerCase())
+    ...dictionaryByWord.get(normalizeDictionaryKey(word))
   }));
   assertDictionaryInfo(rows);
   return rows.map(withDictionaryInfo);
@@ -71,4 +78,8 @@ export async function getTokenByOrder(articleId, tokenOrder) {
 
 function splitEnglishWords(text) {
   return String(text || '').match(/[A-Za-z]+(?:[’'][A-Za-z]+)?/g) || [];
+}
+
+function normalizeDictionaryKey(word) {
+  return String(word || '').replace(/[^A-Za-z0-9]/g, '').toLowerCase();
 }
